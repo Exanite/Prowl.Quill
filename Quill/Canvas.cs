@@ -182,6 +182,8 @@ namespace Prowl.Quill
         internal Vector2 CurrentPointInternal => _currentSubPath.Points[_currentSubPath.Points.Count - 1];
         internal ICanvasRenderer _renderer;
 
+        internal DrawCall pendingDrawCall;
+
         internal List<DrawCall> _drawCalls = new List<DrawCall>();
         internal Stack<object> _textureStack = new Stack<object>();
 
@@ -459,7 +461,20 @@ namespace Prowl.Quill
 
         #region Draw Calls
 
-        public void AddDrawCmd() => _drawCalls.Add(new DrawCall());
+        /// <summary>
+        /// Finishes the current draw call if it has any submitted elements,
+        /// submitting it to the draw call list and ensuring future modifications are made to a new draw call.
+        /// </summary>
+        public void FinishCurrentDrawCall()
+        {
+            if (pendingDrawCall.ElementCount == 0)
+            {
+                return;
+            }
+
+            _drawCalls.Add(pendingDrawCall);
+            pendingDrawCall = new DrawCall();
+        }
 
         public void AddVertex(Vertex vertex)
         {
@@ -493,37 +508,28 @@ namespace Prowl.Quill
 
         private void AddTriangleCount(int count)
         {
-            if (_drawCalls.Count == 0)
-            {
-                AddDrawCmd();
-            }
-
-            DrawCall lastDrawCall = _drawCalls[_drawCalls.Count - 1];
-
-            bool isDrawStateSame = lastDrawCall.Texture == _state.texture &&
-                lastDrawCall.scissorExtent == _state.scissorExtent &&
-                lastDrawCall.scissor == _state.scissor &&
-                lastDrawCall.Brush.EqualsOther(_state.brush);
+            bool isDrawStateSame = pendingDrawCall.Texture == _state.texture &&
+                pendingDrawCall.scissorExtent == _state.scissorExtent &&
+                pendingDrawCall.scissor == _state.scissor &&
+                pendingDrawCall.Brush.EqualsOther(_state.brush);
 
             if (!isDrawStateSame)
             {
-                // If draw state has changed and the last draw call has already been used, add a new draw call
-                if (lastDrawCall.ElementCount != 0)
-                    AddDrawCmd();
+                // If draw state has changed, add a new draw call
+                FinishCurrentDrawCall();
 
-                lastDrawCall = _drawCalls[_drawCalls.Count - 1];
-                lastDrawCall.Texture = _state.texture;
-                lastDrawCall.scissor = _state.scissor;
-                lastDrawCall.scissorExtent = _state.scissorExtent;
-                lastDrawCall.Brush = _state.brush;
+                pendingDrawCall.Texture = _state.texture;
+                pendingDrawCall.scissor = _state.scissor;
+                pendingDrawCall.scissorExtent = _state.scissorExtent;
+                pendingDrawCall.Brush = _state.brush;
             }
 
-            lastDrawCall.ElementCount += count * 3;
-            _drawCalls[_drawCalls.Count - 1] = lastDrawCall;
+            pendingDrawCall.ElementCount += count * 3;
         }
 
         public void Render()
         {
+            FinishCurrentDrawCall();
             _renderer.RenderCalls(this, _drawCalls);
         }
 
